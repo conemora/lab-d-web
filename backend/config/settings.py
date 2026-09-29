@@ -37,7 +37,8 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
-]
+    "catalogo", # <-- 1) Sin este registro Django ignora tu app y sus modelos
+    ]
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
@@ -124,4 +125,15 @@ MAILERS = {
     'default': {
         'BACKEND': 'django.core.mail.backends.console.EmailBackend',
     },
+}
+# 2) Idioma y zona horaria de Chile (afecta al admin y a las fechas)
+LANGUAGE_CODE = "es-cl"
+TIME_ZONE = "America/Santiago"
+
+# 3) Solo revisar: Django ya configura SQLite por defecto
+DATABASES = {
+    "default": {
+    "ENGINE": "django.db.backends.sqlite3",
+    "NAME": BASE_DIR / "db.sqlite3", # archivo local, se crea al migrar
+    }
 }
