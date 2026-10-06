@@ -37,6 +37,8 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    # ... apps de Django ...
+    "rest_framework", # <-- Django Rest Framework
     "catalogo", # <-- 1) Sin este registro Django ignora tu app y sus modelos
     ]
 
