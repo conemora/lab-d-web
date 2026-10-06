@@ -39,12 +39,15 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     # ... apps de Django ...
     "rest_framework", # <-- Django Rest Framework
+    "corsheaders",
     "catalogo", # <-- 1) Sin este registro Django ignora tu app y sus modelos
     ]
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    'corsheaders.middleware.CorsMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
+    
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
@@ -139,3 +142,7 @@ DATABASES = {
     "NAME": BASE_DIR / "db.sqlite3", # archivo local, se crea al migrar
     }
 }
+CORS_ALLOWED_ORIGINS = [
+"http://localhost:5173",
+"http://127.0.0.1:5173",
+]
