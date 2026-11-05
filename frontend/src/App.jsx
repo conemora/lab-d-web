@@ -6,5 +6,5 @@ fetch("http://127.0.0.1:8000/api/servicios/")
 .then((datos) => console.log("Datos recibidos:", datos))
 .catch((err) => console.error("Falló la petición:", err));
 }, []);
-return <h1>Probando la conexión…</h1>;
+return <h1>conectado al frontend :3</h1>;
 }
