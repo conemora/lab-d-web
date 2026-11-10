@@ -4,6 +4,6 @@ from .views import ServicioViewSet
 
 router = DefaultRouter()
 
-router.register("servicios", ServicioViewSet, basename="servicio")
-# El router genera /servicios/ y /servicios/<id>/ con sus métodos HTTP
+router.register("Movimiento", ServicioViewSet, basename="Movimiento")
+# El router genera /Movimiento/ y /Movimiento/<id>/ con sus métodos HTTP
 urlpatterns = router.urls
