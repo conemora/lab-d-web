@@ -7,14 +7,14 @@
 ## 2. Equipo
 | Integrante | Rol | Usuario GitHub |
 |---|---|---|
-| Nombre Apellido | Backend / Frontend / Documentación | @usuario |
+| Franco Valenzuela | Backend / Frontend / Documentación | @conemora |
 ## 3. Stack y versiones
 | Tecnología | Versión |
 |---|---|
-| Python | (salida de python --version) |
-| Django | (salida de django --version) |
-| Node.js / npm | (versiones) |
-| React / Vite | (según package.json) |
+| Python |  3.14.7 |
+| Django | 6.1.1 |
+| Node.js / npm | 11.17.0 |
+| React / Vite | 8.3.0 |
 | Base de datos | SQLite |
 ## 4. Arquitectura
 Diagrama o descripción del flujo Navegador -> React -> Django -> SQLite.
@@ -25,7 +25,11 @@ Estrategia de integración React-Django elegida y su justificación.
 ### Modelo de datos
 | Campo | Tipo Django | Descripción |
 |---|---|---|
-| nombre | CharField(100) | ... |
+| Monto | IntegerField(min_value=0) | Monto que se ahorro |
+| Mes | CharField(max_length=10) | Mes que se ahorro cierta cantidad |
+| Accion | CharField(max_length=9) | Accion que se realizo (CRUD) |
+| Descripcion | TextField(max_length=200) | Motivo de la accion |
+| Modificado_el | DateTimeField(auto_now_add=True) | Fecha de la interaccion |
 ### Endpoints
 | Método | Ruta | Descripción | Ejemplo de respuesta |
 |---|---|---|---|
