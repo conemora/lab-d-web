@@ -1,74 +1,139 @@
+from django.db import DatabaseError, IntegrityError, transaction
 from rest_framework import serializers
 
-from .models import Movimiento
-from .models import Datos_Grafica
+from .models import Datos_Grafica, Movimiento
+
+MESES_NUM_A_NOMBRE = {
+    "1": "enero",
+    "2": "febrero",
+    "3": "marzo",
+    "4": "abril",
+    "5": "mayo",
+    "6": "junio",
+    "7": "julio",
+    "8": "agosto",
+    "9": "septiembre",
+    "10": "octubre",
+    "11": "noviembre",
+    "12": "diciembre",
+}
+
+MESES_VALIDOS = set(MESES_NUM_A_NOMBRE.values())
+
+
+def normalizar_mes(mes):
+    mes_limpio = str(mes).strip().lower()
+    if mes_limpio in MESES_NUM_A_NOMBRE:
+        mes_limpio = MESES_NUM_A_NOMBRE[mes_limpio]
+    if mes_limpio not in MESES_VALIDOS:
+        raise serializers.ValidationError(
+            "El mes ingresado no es válido (mes inexistente o número fuera de [1, 12])."
+        )
+    return mes_limpio.capitalize()
 
 
 class DatosGraficaSerializer(serializers.ModelSerializer):
     class Meta:
         model = Datos_Grafica
         fields = ["id", "mes", "MontoTotal"]
-        read_only_fields = ["id"] # los genera el servidor, no el cliente
+        read_only_fields = ["id"]
 
     def validate_mes(self, mes):
-        mes_limpio = mes.strip().lower()
-        if mes_limpio not in ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"]:
-            if mes_limpio not in ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12"]:
-                raise serializers.ValidationError("El mes ingresado no es valido(mes falso o numero fuera del intervalo [1,12]).")
-        return mes_limpio.capitalize()
-    def validate_MontoTotal(self, MontoTotal):
+        return normalizar_mes(mes)
 
-        if MontoTotal <= 0:
-            raise serializers.ValidationError("El monto del mes debe ser mayor que 0.(el gasto del mes no puede disminuir el monto abajo de 0)")
+    def validate_MontoTotal(self, MontoTotal):
+        if not isinstance(MontoTotal, (int, float)):
+            raise serializers.ValidationError("El monto del mes debe ser un número.")
         return MontoTotal
+
+
 class MovimientoSerializer(serializers.ModelSerializer):
+    Accion = serializers.ChoiceField(
+        choices=["ingresar", "cambiar", "eliminar"],
+        default="ingresar",
+    )
+    Descripcion = serializers.CharField(
+        max_length=200,
+        required=False,
+        allow_blank=True,
+        default="",
+    )
+
     class Meta:
         model = Movimiento
         fields = ["id", "mes", "Accion", "Monto", "Descripcion", "activo", "Modificado_el"]
-        read_only_fields = ["id", "Modificado_el"] # los genera el servidor, no el cliente
+        read_only_fields = ["id", "Modificado_el"]
 
-    # Validación a medida: se ejecuta automáticamente para el campo "precio"
     def validate_Monto(self, Monto):
-        if Monto <= 0:
-            raise serializers.ValidationError("El monto debe ser mayor que 0.")
+        if not isinstance(Monto, (int, float)):
+            raise serializers.ValidationError("El monto debe ser un número.")
         return Monto
-    # Validacion de accion
-    def validate_Accion(self, Accion):
-        if Accion not in ["ingresar", "cambiar", "eliminar"]:
-            raise serializers.ValidationError("La accion debe ser 'ingresar', 'cambiar' o 'eliminar'.")
-        return Accion
-    # Validación a medida: se ejecuta automáticamente para el campo "mes"
+
     def validate_mes(self, mes):
-        mes_limpio = mes.strip().lower()
-        if mes_limpio not in ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"]:
-            if mes_limpio not in ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12"]:
-                raise serializers.ValidationError("El mes ingresado no es valido(mes falso o numero fuera del intervalo [1,12]).")
-        return mes_limpio.capitalize()
+        return normalizar_mes(mes)
 
-    # Validación a medida: se ejecuta automáticamente para el campo "Descripcion"
-    def validate_Descripcion(self, Descripcion):
-        if len(Descripcion) > 200:
-            raise serializers.ValidationError("La descripción no puede tener más de 200 caracteres.")
-        return Descripcion
-    
+    def validate(self, attrs):
+        accion = attrs.get("Accion", "ingresar")
+        mes = attrs.get("mes")
+
+        if accion == "ingresar" and mes:
+            try:
+                ya_existe = Datos_Grafica.objects.filter(mes__iexact=mes).exists()
+            except DatabaseError as exc:
+                raise serializers.ValidationError({
+                    "detail": "No se pudo verificar si el mes ya existe por un error en la base de datos."
+                }) from exc
+
+            if ya_existe:
+                raise serializers.ValidationError({
+                    "mes": f"El mes '{mes}' ya existe. Usa 'cambiar' o 'eliminar' para modificarlo."
+                })
+
+        return attrs
+
     def create(self, validated_data):
-        # 1. Guardamos primero el movimiento de forma normal
-        movimiento = Movimiento.objects.create(**validated_data)
-        
-        mes_actual = validated_data.get('mes')
-        monto_ingresado = validated_data.get('Monto')
+        mes_actual = validated_data.get("mes")
+        monto_ingresado = validated_data.get("Monto", 0)
+        accion = validated_data.get("Accion", "ingresar")
 
-        # 2. Buscamos en la otra tabla (Datos_Grafica) por el mes
-        # get_or_create busca si el mes ya existe; si no, lo crea.
-        dato_grafica, creado = Datos_Grafica.objects.get_or_create(
-            mes__iexact=mes_actual,
-            defaults={'mes': mes_actual, 'MontoTotal': monto_ingresado}
-        )
+        try:
+            with transaction.atomic():
+                # Savepoint anidado para aislar errores de unicidad sin romper la transacción externa
+                with transaction.atomic():
+                    dato_grafica = Datos_Grafica.objects.filter(mes__iexact=mes_actual).first()
 
-        # 3. Si ya existía, actualizamos su MontoTotal sumándole el nuevo monto
-        if not creado:
-            dato_grafica.MontoTotal += monto_ingresado
-            dato_grafica.save()
+                    if dato_grafica is None:
+                        monto_inicial = (
+                            max(0, monto_ingresado)
+                            if accion in ["ingresar", "cambiar"]
+                            else 0
+                        )
+                        dato_grafica = Datos_Grafica.objects.create(
+                            mes=mes_actual,
+                            MontoTotal=monto_inicial,
+                        )
+                    else:
+                        if accion in ["ingresar", "cambiar"]:
+                            dato_grafica.MontoTotal = max(
+                                0, dato_grafica.MontoTotal + monto_ingresado
+                            )
+                        elif accion == "eliminar":
+                            dato_grafica.MontoTotal = 0
+                        dato_grafica.save(update_fields=["MontoTotal"])
 
-        return movimiento
+                # Solo se registra en Movimiento si Datos_Grafica se actualizó sin errores
+                movimiento = Movimiento.objects.create(**validated_data)
+                return movimiento
 
+        except serializers.ValidationError:
+            raise
+
+        except IntegrityError as exc:
+            raise serializers.ValidationError({
+                "mes": f"El mes '{mes_actual}' ya existe o viola una restricción de unicidad."
+            }) from exc
+
+        except DatabaseError as exc:
+            raise serializers.ValidationError({
+                "detail": "Error temporal de base de datos en SQLite. Intenta nuevamente."
+            }) from exc

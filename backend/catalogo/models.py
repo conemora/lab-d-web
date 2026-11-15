@@ -13,7 +13,7 @@ class Movimiento(models.Model):
         verbose_name_plural = "Movimientos" # cómo se ve en el admin
 
     def __str__(self):
-        return f"{self.mes} - {self.Accion}: ${self.Monto} ({self.Descripcion})"
+        return f"{self.mes} - {self.Accion}: ${self.Monto} ({self.Descripcion}) - {self.Modificado_el.strftime('%Y-%m-%d %H:%M:%S')}"
 
 class Datos_Grafica(models.Model):
     mes = models.CharField(max_length=10) # texto corto
