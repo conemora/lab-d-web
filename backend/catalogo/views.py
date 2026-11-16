@@ -1,156 +1,226 @@
-from django.db import DatabaseError, IntegrityError, transaction
-from rest_framework import status, viewsets
-from rest_framework.decorators import action, api_view
+
+from django.db import DatabaseError, transaction
+
+from rest_framework import status
+from rest_framework.views import APIView
 from rest_framework.response import Response
+from rest_framework.permissions import IsAuthenticated, AllowAny
+from .auth_serializers import RegistroSerializer
 
 from .models import Datos_Grafica, Movimiento
 from .serializers import (
     DatosGraficaSerializer,
     MovimientoSerializer,
-    normalizar_mes,
+    MovimientoIngresoSerializer,
+    MovimientoAjusteSerializer,
 )
 
+# 1. GRÁFICA: SOLAMENTE GET
+class DatosGraficaView(APIView):
+    permission_classes = [IsAuthenticated]
 
-class DatosGraficaViewSet(viewsets.ModelViewSet):
-    queryset = Datos_Grafica.objects.all()
-    serializer_class = DatosGraficaSerializer
-    # GET /api/Datos_Grafica/ -> usa list() automáticamente para el gráfico
+    def get(self, request):
+        datos = Datos_Grafica.objects.filter(
+            usuario=request.user
+        ).order_by("id")
+
+        serializer = DatosGraficaSerializer(
+            datos,
+            many=True
+        )
+
+        return Response(serializer.data)
 
 
-class MovimientoViewSet(viewsets.ModelViewSet):
-    queryset = Movimiento.objects.all()
-    serializer_class = MovimientoSerializer
+# 2. HISTORIAL: SOLAMENTE GET
+class MovimientoHistorialView(APIView):
+    permission_classes = [IsAuthenticated]
 
-    # 1. "ingresar" -> POST /api/Movimiento/ (usa create del serializer)
-    def create(self, request, *args, **kwargs):
-        data = request.data.copy()
-        data["Accion"] = "ingresar"
+    def get(self, request):
+        movimientos = Movimiento.objects.filter(
+            usuario=request.user
+        ).order_by("-Modificado_el", "-id")
 
-        serializer = self.get_serializer(data=data)
+        serializer = MovimientoSerializer(
+            movimientos,
+            many=True
+        )
+
+        return Response(serializer.data)
+
+
+# 3. INGRESAR AHORRO: SOLAMENTE POST
+class MovimientoIngresoView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        serializer = MovimientoIngresoSerializer(
+            data=request.data,
+            context={"request": request}
+        )
+
         serializer.is_valid(raise_exception=True)
-        movimiento = serializer.save()
-
-        return Response(
-            self.get_serializer(movimiento).data,
-            status=status.HTTP_201_CREATED,
-        )
-
-    # 2. "cambio" -> POST /api/Movimiento/cambiar/
-    @action(detail=False, methods=["post"], url_path="cambiar")
-    def cambiar(self, request):
-        try:
-            mes = normalizar_mes(request.data.get("mes", ""))
-        except Exception as exc:
-            return Response(
-                {"mes": [str(exc.detail[0]) if hasattr(exc, "detail") else str(exc)]},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        monto = request.data.get("Monto")
-        if not isinstance(monto, (int, float)):
-            return Response(
-                {"Monto": ["El monto debe ser un número."]},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        descripcion = request.data.get("Descripcion", "Cambio de monto")
+        datos = serializer.validated_data
 
         try:
             with transaction.atomic():
-                dato_grafica = Datos_Grafica.objects.filter(mes__iexact=mes).first()
-                if dato_grafica is None:
+
+                # Comprobar nuevamente que el mes no exista
+                existe = Datos_Grafica.objects.filter(
+                    usuario=request.user,
+                    mes__iexact=datos["mes"]
+                ).exists()
+
+                if existe:
                     return Response(
-                        {"mes": [f"El mes '{mes}' no existe en Datos_Grafica."]},
-                        status=status.HTTP_404_NOT_FOUND,
+                        {"mes": ["Este mes ya tiene un registro."]},
+                        status=status.HTTP_400_BAD_REQUEST
                     )
 
-                dato_grafica.MontoTotal = max(0, dato_grafica.MontoTotal + monto)
-                dato_grafica.save(update_fields=["MontoTotal"])
+                # Crear el registro de la gráfica
+                Datos_Grafica.objects.create(
+                    usuario=request.user,
+                    mes=datos["mes"],
+                    MontoTotal=datos["Monto"]
+                )
+
+                # Crear el movimiento del historial
+                movimiento = Movimiento.objects.create(
+                    usuario=request.user,
+                    mes=datos["mes"],
+                    Accion="ingresar",
+                    Monto=datos["Monto"],
+                    Descripcion=datos["Descripcion"],
+                    activo=True
+                )
+
+            return Response(
+                MovimientoSerializer(movimiento).data,
+                status=status.HTTP_201_CREATED
+            )
+
+        except DatabaseError:
+            return Response(
+                {"detail": "No se pudo registrar el ahorro."},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+
+# 4. CAMBIAR O ELIMINAR MONTO: SOLAMENTE POST
+class MovimientoAjusteView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        serializer = MovimientoAjusteSerializer(
+            data=request.data
+        )
+
+        serializer.is_valid(raise_exception=True)
+        datos = serializer.validated_data
+
+        try:
+            with transaction.atomic():
+
+                dato_grafica = Datos_Grafica.objects.filter(
+                    usuario=request.user,
+                    mes__iexact=datos["mes"]
+                ).first()
+
+                if dato_grafica is None:
+                    return Response(
+                        {"mes": ["No existe un registro para ese mes."]},
+                        status=status.HTTP_404_NOT_FOUND
+                    )
+
+                accion = datos["Accion"]
+                monto = datos["Monto"]
+
+                if accion == "cambiar":
+                    # Sumar el monto, incluso si es negativo
+                    dato_grafica.MontoTotal += monto
+
+                elif accion == "eliminar":
+                    # Reiniciar el mes a cero
+                    dato_grafica.MontoTotal = 0
+
+                dato_grafica.save(
+                    update_fields=["MontoTotal"]
+                )
 
                 movimiento = Movimiento.objects.create(
-                    mes=mes,
-                    Accion="cambiar",
+                    usuario=request.user,
+                    mes=dato_grafica.mes,
+                    Accion=accion,
                     Monto=monto,
-                    Descripcion=descripcion,
+                    Descripcion=datos["Descripcion"],
+                    activo=True
                 )
 
             return Response(
                 MovimientoSerializer(movimiento).data,
-                status=status.HTTP_200_OK,
+                status=status.HTTP_200_OK
             )
 
-        except IntegrityError as exc:
+        except DatabaseError:
             return Response(
-                {"mes": [f"No se pudo actualizar '{mes}' por restricción de integridad."]},
-                status=status.HTTP_400_BAD_REQUEST,
+                {"detail": "No se pudo modificar el ahorro."},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
-        except DatabaseError as exc:
-            return Response(
-                {"detail": "Error temporal de base de datos en SQLite. Intenta nuevamente."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
 
-    # 3. "eliminar" -> DELETE /api/Movimiento/eliminar/?mes=...
-    @action(detail=False, methods=["delete"], url_path="eliminar")
-    def eliminar(self, request):
-        mes_crudo = request.query_params.get("mes") or request.data.get("mes", "")
+# 5. ELIMINAR Movimientos y Datos de Gráfica: SOLAMENTE DELETE
+class LimpiarMovimientosView(APIView):
+    permission_classes = [IsAuthenticated]
 
-        try:
-            mes = normalizar_mes(mes_crudo)
-        except Exception as exc:
-            return Response(
-                {"mes": [str(exc.detail[0]) if hasattr(exc, "detail") else str(exc)]},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
+    def delete(self, request):
         try:
             with transaction.atomic():
-                dato_grafica = Datos_Grafica.objects.filter(mes__iexact=mes).first()
-                if dato_grafica is None:
-                    return Response(
-                        {"mes": [f"El mes '{mes}' no existe."]},
-                        status=status.HTTP_404_NOT_FOUND,
-                    )
 
-                dato_grafica.MontoTotal = 0
-                dato_grafica.save(update_fields=["MontoTotal"])
+                # Eliminar todos los movimientos del usuario
+                movimientos_eliminados, _ = (
+                    Movimiento.objects.filter(
+                        usuario=request.user
+                    ).delete()
+                )
 
-                movimiento = Movimiento.objects.create(
-                    mes=mes,
-                    Accion="eliminar",
-                    Monto=0,
-                    Descripcion="Eliminación de monto mensual",
+                # Eliminar todos sus datos de la gráfica
+                datos_eliminados, _ = (
+                    Datos_Grafica.objects.filter(
+                        usuario=request.user
+                    ).delete()
                 )
 
             return Response(
-                MovimientoSerializer(movimiento).data,
-                status=status.HTTP_200_OK,
+                {
+                    "detail": "Tu información fue eliminada correctamente.",
+                    "movimientos_eliminados": movimientos_eliminados,
+                    "datos_grafica_eliminados": datos_eliminados
+                },
+                status=status.HTTP_200_OK
             )
 
-        except IntegrityError as exc:
+        except DatabaseError:
             return Response(
-                {"mes": [f"No se pudo limpiar '{mes}' por restricción de integridad."]},
-                status=status.HTTP_400_BAD_REQUEST,
+                {"detail": "No se pudo eliminar la información."},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
-        except DatabaseError as exc:
-            return Response(
-                {"detail": "Error temporal de base de datos en SQLite. Intenta nuevamente."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-@api_view(["DELETE"])
-def limpiar_todo(request):
-    try:
-        with transaction.atomic():
-            Movimiento.objects.all().delete()
-            Datos_Grafica.objects.all().delete()
-        return Response(
-            {"detail": "Toda la información de movimientos y gráfica fue eliminada."},
-            status=status.HTTP_200_OK,
+# 6. REGISTRO DE USUARIOS: PÚBLICO
+class RegistroView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        serializer = RegistroSerializer(
+            data=request.data
         )
-    except DatabaseError:
+
+        serializer.is_valid(raise_exception=True)
+        usuario = serializer.save()
+
         return Response(
-            {"detail": "No se pudo limpiar la base de datos por un error de SQLite."},
-            status=status.HTTP_400_BAD_REQUEST,
+            {
+                "detail": "Usuario registrado correctamente.",
+                "username": usuario.username
+            },
+            status=status.HTTP_201_CREATED
         )

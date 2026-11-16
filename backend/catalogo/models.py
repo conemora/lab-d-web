@@ -1,28 +1,50 @@
+
 from django.db import models
+from django.conf import settings
+
 
 class Movimiento(models.Model):
-    mes = models.CharField(max_length=10) # texto corto
-    Accion = models.CharField(max_length=9) # texto
-    Monto = models.IntegerField() # número entero
-    Descripcion = models.TextField(max_length=200) # texto largo
-    activo = models.BooleanField(default=True) # visible u oculto
-    Modificado_el = models.DateTimeField(auto_now_add=True) # se llena solo al crear
+    usuario = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="movimientos",
+        null=True,
+        blank=True
+    )
+
+    mes = models.CharField(max_length=10)
+    Accion = models.CharField(max_length=9)
+    Monto = models.IntegerField()
+    Descripcion = models.TextField(max_length=200)
+    activo = models.BooleanField(default=True)
+    Modificado_el = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        ordering = ["mes"] # orden por defecto de las consultas
-        verbose_name_plural = "Movimientos" # cómo se ve en el admin
+        ordering = ["mes"]
+        verbose_name_plural = "Movimientos"
 
     def __str__(self):
-        return f"{self.mes} - {self.Accion}: ${self.Monto} ({self.Descripcion}) - {self.Modificado_el.strftime('%Y-%m-%d %H:%M:%S')}"
+        return (
+            f"{self.mes} - {self.Accion}: "
+            f"${self.Monto} ({self.Descripcion})"
+        )
+
 
 class Datos_Grafica(models.Model):
-    mes = models.CharField(max_length=10) # texto corto
-    MontoTotal = models.IntegerField() # número entero
+    usuario = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="datos_grafica",
+        null=True,
+        blank=True
+    )
+
+    mes = models.CharField(max_length=10)
+    MontoTotal = models.IntegerField()
 
     class Meta:
-        ordering = ["mes"] # orden por defecto de las consultas
-        verbose_name_plural = "Datos_Grafica" # cómo se ve en el admin
+        ordering = ["mes"]
+        verbose_name_plural = "Datos_Grafica"
 
     def __str__(self):
-        # Texto que Django muestra cuando imprime el objeto (admin, shell)
         return f"{self.mes}: ${self.MontoTotal}"

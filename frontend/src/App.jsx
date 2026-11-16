@@ -1,193 +1,422 @@
 import React, { useState, useEffect } from 'react';
+
 import './App.css';
 import GraficaAhorros from './GraficaAhorros';
-
+import Autenticacion from './Autenticacion';
 const API_BASE = 'http://127.0.0.1:8000/api';
 
 const obtenerMensajeErrorDRF = (data) => {
-  if (!data || typeof data !== 'object') {
-    return 'No se pudo procesar la solicitud.';
-  }
-  if (Array.isArray(data.mes) && data.mes.length > 0) return data.mes[0];
-  if (typeof data.mes === 'string') return data.mes;
+    if (!data || typeof data !== 'object') {
+        return 'No se pudo procesar la solicitud.';
+    }
 
-  if (Array.isArray(data.Monto) && data.Monto.length > 0) return data.Monto[0];
-  if (typeof data.Monto === 'string') return data.Monto;
+    if (typeof data.detail === 'string') {
+        return data.detail;
+    }
 
-  if (Array.isArray(data.Descripcion) && data.Descripcion.length > 0) {
-    return data.Descripcion[0];
-  }
-  if (typeof data.Descripcion === 'string') return data.Descripcion;
+    const primerValor = Object.values(data)[0];
 
-  if (Array.isArray(data.non_field_errors) && data.non_field_errors.length > 0) {
-    return data.non_field_errors[0];
-  }
-  if (typeof data.detail === 'string') return data.detail;
+    if (Array.isArray(primerValor) && primerValor.length > 0) {
+        return primerValor[0];
+    }
 
-  const primerValor = Object.values(data)[0];
-  if (Array.isArray(primerValor) && primerValor.length > 0) return primerValor[0];
-  if (typeof primerValor === 'string') return primerValor;
+    if (typeof primerValor === 'string') {
+        return primerValor;
+    }
 
-  return 'Error de validación en los datos enviados.';
+    return 'Error de validación en los datos enviados.';
 };
 
 function App() {
-  // 1. Estados para datos provenientes de Django
-  const [datosGrafica, setDatosGrafica] = useState([]);
-  const [movimientos, setMovimientos] = useState([]);
-  const [mensaje, setMensaje] = useState('');
+    // AUTENTICACIÓN
+    const [token, setToken] = useState(null);
+    const [usuario, setUsuario] = useState('');
+    const [modoInvitado, setModoInvitado] = useState(false);
 
-  // 2. Estados para Formulario 1: Ingresar ahorro
-  const [formIngreso, setFormIngreso] = useState({
-    Monto: '',
-    mes: '',
-    Descripcion: '',
-  });
+    // DATOS DE LA APLICACIÓN
+    const [datosGrafica, setDatosGrafica] = useState([]);
+    const [movimientos, setMovimientos] = useState([]);
+    const [mensaje, setMensaje] = useState('');
 
-  // 3. Estados para Formulario 2: Corrección de equivocaciones
-  const [formCorreccion, setFormCorreccion] = useState({
-    Monto: '',
-    mes: '',
-    Accion: '',
-    Descripcion: '',
-  });
+    // FORMULARIO DE INGRESO
+    const [formIngreso, setFormIngreso] = useState({
+        Monto: '',
+        mes: '',
+        Descripcion: '',
+    });
 
-  // 4. Obtener datos desde Django (GET)
-  const cargarDatos = async () => {
-    try {
-      const [resGrafica, resMov] = await Promise.all([
-        fetch(`${API_BASE}/Datos_Grafica/`),
-        fetch(`${API_BASE}/Movimiento/`),
-      ]);
+    // FORMULARIO DE CORRECCIÓN
+    const [formCorreccion, setFormCorreccion] = useState({
+        Monto: '',
+        mes: '',
+        Accion: '',
+        Descripcion: '',
+    });
 
-      if (resGrafica.ok) {
-        const dataGrafica = await resGrafica.json();
-        setDatosGrafica(dataGrafica);
-      }
+    // PETICIONES AUTENTICADAS
+    const peticionAPI = async (ruta, opciones = {}) => {
 
-      if (resMov.ok) {
-        const dataMov = await resMov.json();
-        setMovimientos(dataMov);
-      }
-    } catch (error) {
-      setMensaje('No se pudo conectar con el servidor Django.');
-    }
-  };
-
-  useEffect(() => {
-    cargarDatos();
-  }, []);
-
-  // 5. Enviar Formulario 1 (POST /api/Movimiento/ -> Accion: "ingresar")
-  const handleSubmitIngreso = async (e) => {
-    e.preventDefault();
-    setMensaje('');
-
-    try {
-      const response = await fetch(`${API_BASE}/Movimiento/`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          mes: formIngreso.mes,
-          Accion: 'ingresar',
-          Monto: Number(formIngreso.Monto),
-          Descripcion: formIngreso.Descripcion || 'Ingreso desde formulario',
-        }),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        setMensaje(obtenerMensajeErrorDRF(data));
-        return;
-      }
-
-      setFormIngreso({ Monto: '', mes: '', Descripcion: '' });
-      setMensaje('Movimiento guardado correctamente.');
-      cargarDatos(); // Refresca gráfica y tabla
-    } catch (error) {
-      setMensaje('Error de red al enviar el ingreso.');
-    }
-  };
-
-  // 6. Enviar Formulario 2 (POST /api/Movimiento/cambiar/ o DELETE /api/Movimiento/eliminar/)
-  const handleSubmitCorreccion = async (e) => {
-    e.preventDefault();
-    setMensaje('');
-
-    const { mes, Accion, Monto, Descripcion } = formCorreccion;
-
-    try {
-      let response;
-
-      if (Accion === 'eliminar') {
-        const mesQuery = encodeURIComponent(mes);
-        response = await fetch(`${API_BASE}/Movimiento/eliminar/?mes=${mesQuery}`, {
-          method: 'DELETE',
+        const response = await fetch(`${API_BASE}${ruta}`, {
+            ...opciones,
+            headers: {
+                'Content-Type': 'application/json',
+                ...opciones.headers,
+                Authorization: `Bearer ${token}`,
+            },
         });
-      } else {
-        response = await fetch(`${API_BASE}/Movimiento/cambiar/`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
+
+        const data = await response.json().catch(() => ({}));
+
+        if (!response.ok) {
+            throw new Error(obtenerMensajeErrorDRF(data));
+        }
+
+        return data;
+    };
+
+    // CARGAR GRÁFICA E HISTORIAL
+    const cargarDatos = async () => {
+
+        try {
+
+            const [dataGrafica, dataMovimientos] = await Promise.all([
+                peticionAPI('/Datos_Grafica/'),
+                peticionAPI('/Movimiento/'),
+            ]);
+
+            setDatosGrafica(dataGrafica);
+            setMovimientos(dataMovimientos);
+
+        } catch (error) {
+            setMensaje(error.message);
+        }
+    };
+
+    // CARGAR DATOS AL INICIAR SESIÓN
+    useEffect(() => {
+
+        if (token) {
+            cargarDatos();
+        }
+
+    }, [token]);
+
+    // INGRESAR COMO INVITADO
+    const entrarComoInvitado = () => {
+
+        setToken(null);
+        setUsuario('');
+        setModoInvitado(true);
+
+        setDatosGrafica([]);
+        setMovimientos([]);
+        setMensaje('');
+
+    };
+
+    // INICIAR SESIÓN
+    const iniciarSesion = (nuevoToken, nombreUsuario) => {
+
+        setDatosGrafica([]);
+        setMovimientos([]);
+
+        setToken(nuevoToken);
+        setUsuario(nombreUsuario);
+        setModoInvitado(false);
+        setMensaje('Sesión iniciada correctamente.');
+
+    };
+
+    // CERRAR SESIÓN O SALIR DEL MODO INVITADO
+    const cerrarSesion = () => {
+
+        setToken(null);
+        setUsuario('');
+        setModoInvitado(false);
+
+        setDatosGrafica([]);
+        setMovimientos([]);
+
+        setMensaje('');
+
+        setFormIngreso({
+            Monto: '',
+            mes: '',
+            Descripcion: '',
+        });
+
+        setFormCorreccion({
+            Monto: '',
+            mes: '',
+            Accion: '',
+            Descripcion: '',
+        });
+
+    };
+
+    // CREAR MOVIMIENTO LOCAL PARA INVITADOS
+    const crearMovimientoLocal = (mes, accion, monto, descripcion) => {
+
+        return {
+            id: Date.now() + Math.random(),
             mes,
-            Accion: 'cambiar',
-            Monto: Number(Monto),
-            Descripcion: Descripcion || 'Corrección desde formulario',
-          }),
-        });
-      }
+            Accion: accion,
+            Monto: monto,
+            Descripcion: descripcion,
+            activo: true,
+            Modificado_el: new Date().toISOString(),
+        };
 
-      const data = await response.json();
+    };
 
-      if (!response.ok) {
-        setMensaje(obtenerMensajeErrorDRF(data));
-        return;
-      }
+    // INGRESAR AHORRO
+    const handleSubmitIngreso = async (e) => {
 
-      setFormCorreccion({ Monto: '', mes: '', Accion: '', Descripcion: '' });
-      setMensaje('Corrección registrada.');
-      cargarDatos(); // Refresca gráfica y tabla
-    } catch (error) {
-      setMensaje('Error de red al enviar la corrección.');
-    }
-  };
+        e.preventDefault();
+        setMensaje('');
 
-  const handleEliminarTodo = async (e) => {
-    e.preventDefault();
+        const mes = formIngreso.mes.trim();
+        const monto = Number(formIngreso.Monto);
+        const descripcion = formIngreso.Descripcion || 'Ingreso desde formulario';
 
-    const confirmado = window.confirm(
-      '¿Seguro que quieres eliminar la informacion de los movimientos? Esta acción no se puede deshacer.'
-    );
-    if (!confirmado) return;
+        if (!mes || !Number.isInteger(monto) || monto <= 0) {
+            setMensaje('El monto debe ser un número entero positivo.');
+            return;
+        }
 
-    try {
-      const res = await fetch(`${API_BASE}/limpiar/`, { method: 'DELETE' });
-      if (!res.ok) {
-        const data = await res.json().catch(() => null);
-        setMensaje(obtenerMensajeErrorDRF(data) || 'No se pudo eliminar la información.');
-        return;
-      }
+        try {
 
-      setMensaje('Información eliminada.');
-      await cargarDatos();
-    } catch (error) {
-      setMensaje('Error de red al intentar eliminar la información.');
-    }
-  };
+            if (modoInvitado) {
 
+                const existe = datosGrafica.some(
+                    dato => dato.mes.toLowerCase() === mes.toLowerCase()
+                );
+
+                if (existe) {
+                    setMensaje('Ya existe un registro para este mes.');
+                    return;
+                }
+
+                setDatosGrafica(prev => [
+                    ...prev,
+                    {
+                        id: Date.now(),
+                        mes: mes,
+                        MontoTotal: monto,
+                    },
+                ]);
+
+                setMovimientos(prev => [
+                    crearMovimientoLocal(
+                        mes,
+                        'ingresar',
+                        monto,
+                        descripcion
+                    ),
+                    ...prev,
+                ]);
+
+            } else {
+
+                await peticionAPI('/Movimiento/ingresar/', {
+                    method: 'POST',
+                    body: JSON.stringify({
+                        mes,
+                        Monto: monto,
+                        Descripcion: descripcion,
+                    }),
+                });
+
+                await cargarDatos();
+
+            }
+
+            setFormIngreso({
+                Monto: '',
+                mes: '',
+                Descripcion: '',
+            });
+
+            setMensaje('Ahorro registrado correctamente.');
+
+        } catch (error) {
+            setMensaje(error.message);
+        }
+
+    };
+
+    // CAMBIAR O ELIMINAR AHORRO
+    const handleSubmitCorreccion = async (e) => {
+
+        e.preventDefault();
+        setMensaje('');
+
+        const { mes, Accion, Monto, Descripcion } = formCorreccion;
+
+        const mesNormalizado = mes.trim();
+        const monto = Number(Monto);
+
+        if (!mesNormalizado || !Accion) {
+            setMensaje('Completa los campos obligatorios.');
+            return;
+        }
+
+        if (
+            Accion === 'cambiar' &&
+            (!Number.isInteger(monto) || Monto === '')
+        ) {
+            setMensaje('Ingresa un monto entero válido.');
+            return;
+        }
+
+        try {
+
+            if (modoInvitado) {
+
+                const dato = datosGrafica.find(
+                    item => item.mes.toLowerCase() === mesNormalizado.toLowerCase()
+                );
+
+                if (!dato) {
+                    setMensaje('No existe un registro para ese mes.');
+                    return;
+                }
+
+                const montoMovimiento = Accion === 'eliminar' ? 0 : monto;
+
+                setDatosGrafica(prev =>
+                    prev.map(item => {
+
+                        if (item.id !== dato.id) {
+                            return item;
+                        }
+
+                        return {
+                            ...item,
+                            MontoTotal: Accion === 'eliminar'
+                                ? 0
+                                : item.MontoTotal + monto,
+                        };
+
+                    })
+                );
+
+                setMovimientos(prev => [
+                    crearMovimientoLocal(
+                        dato.mes,
+                        Accion,
+                        montoMovimiento,
+                        Descripcion || (
+                            Accion === 'eliminar'
+                                ? 'Eliminación de monto mensual'
+                                : 'Corrección desde formulario'
+                        )
+                    ),
+                    ...prev,
+                ]);
+
+            } else {
+
+                const datos = {
+                    mes: mesNormalizado,
+                    Accion,
+                    Descripcion: Descripcion || '',
+                };
+
+                if (Accion === 'cambiar') {
+                    datos.Monto = monto;
+                }
+
+                await peticionAPI('/Movimiento/ajustar/', {
+                    method: 'POST',
+                    body: JSON.stringify(datos),
+                });
+
+                await cargarDatos();
+
+            }
+
+            setFormCorreccion({
+                Monto: '',
+                mes: '',
+                Accion: '',
+                Descripcion: '',
+            });
+
+            setMensaje(
+                Accion === 'eliminar'
+                    ? 'Monto reiniciado correctamente.'
+                    : 'Monto modificado correctamente.'
+            );
+
+        } catch (error) {
+            setMensaje(error.message);
+        }
+
+    };
+
+    // LIMPIAR TODA LA INFORMACIÓN
+    const handleEliminarTodo = async (e) => {
+
+        e.preventDefault();
+
+        const confirmado = window.confirm(
+            '¿Seguro que quieres eliminar toda la información? Esta acción no se puede deshacer.'
+        );
+
+        if (!confirmado) return;
+
+        try {
+
+            if (modoInvitado) {
+
+                setDatosGrafica([]);
+                setMovimientos([]);
+
+            } else {
+
+                await peticionAPI('/limpiar/', {
+                    method: 'DELETE',
+                });
+
+                await cargarDatos();
+
+            }
+
+            setMensaje('Toda la información fue eliminada correctamente.');
+
+        } catch (error) {
+            setMensaje(error.message);
+        }
+
+    };
+  if (!token && !modoInvitado) {
+      return (
+          <Autenticacion
+              onLogin={iniciarSesion}
+              onInvitado={entrarComoInvitado}
+          />
+      );
+  }
   return (
     <div className="pagina">
       {/* Barra de navegación */}
       <nav className="navbar">
         <div className="menu-izquierda">
-          <a href="#eliminar" onClick={handleEliminarTodo}>
-            Eliminar toda la información
-          </a>
+            <a href="#eliminar" onClick={handleEliminarTodo}>Eliminar toda la información</a>
         </div>
         <div className="menu-derecha">
-          <a href="#">Registrarse</a>
-          <a href="#">Iniciar sesión</a>
+          {modoInvitado ? (
+            <>
+              <span>Modo invitado</span>
+              <a href="#salir" onClick={(e) => {e.preventDefault(); cerrarSesion();}}>Salir</a>
+            </>
+          ) : (
+            <>
+              <span>Hola, {usuario}</span>
+              <a href="#cerrar" onClick={(e) => {e.preventDefault(); cerrarSesion();}}>Cerrar sesión</a>
+            </>
+          )}
         </div>
       </nav>
 

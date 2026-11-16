@@ -1,13 +1,42 @@
-from django.urls import include, path
-from rest_framework.routers import DefaultRouter
 
-from .views import DatosGraficaViewSet, MovimientoViewSet, limpiar_todo
+from django.urls import path
 
-router = DefaultRouter()
-router.register("Datos_Grafica", DatosGraficaViewSet, basename="Datos_Grafica")
-router.register("Movimiento", MovimientoViewSet, basename="Movimiento")
+from .views import (
+    DatosGraficaView,
+    MovimientoHistorialView,
+    MovimientoIngresoView,
+    MovimientoAjusteView,
+    LimpiarMovimientosView,
+)
 
 urlpatterns = [
-    path("limpiar/", limpiar_todo, name="limpiar_todo"),
-    path("", include(router.urls)),
+    path(
+        "Datos_Grafica/",
+        DatosGraficaView.as_view(),
+        name="datos_grafica"
+    ),
+
+    path(
+        "Movimiento/",
+        MovimientoHistorialView.as_view(),
+        name="movimiento_historial"
+    ),
+
+    path(
+        "Movimiento/ingresar/",
+        MovimientoIngresoView.as_view(),
+        name="movimiento_ingresar"
+    ),
+
+    path(
+        "Movimiento/ajustar/",
+        MovimientoAjusteView.as_view(),
+        name="movimiento_ajustar"
+    ),
+
+    path(
+        "limpiar/",
+        LimpiarMovimientosView.as_view(),
+        name="limpiar_movimientos"
+    ),
 ]
