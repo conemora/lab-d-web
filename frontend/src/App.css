@@ -231,3 +231,62 @@ html, body, #root {
     text-align: center;
     font-size: 14px;
 }
+/* Contenedor de mensajes */
+.Grafica {
+    flex-direction: column;
+    gap: 15px;
+}
+
+/* Tarjeta de mensajes */
+.alerta-api {
+    width: 100%;
+    padding: 15px 20px;
+    border-radius: 8px;
+    text-align: center;
+    font-size: 15px;
+    font-weight: 500;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+}
+
+.alerta-api {
+    width: 100%;
+    padding: 15px;
+    margin-top: 15px;
+    border-radius: 8px;
+    border: 1px solid #ccc;
+    text-align: center;
+    font-size: 15px;
+    background: transparent;
+}
+/* Tabla de movimientos */
+
+.tabla-responsive {
+    width: 100%;
+    overflow-x: auto;
+    margin-top: 20px;
+}
+
+.tabla-movimientos {
+    width: 100%;
+    border-collapse: collapse;
+    text-align: left;
+}
+
+.tabla-movimientos th,
+.tabla-movimientos td {
+    padding: 12px 15px;
+    border-bottom: 1px solid #ddd;
+}
+
+.tabla-movimientos th {
+    font-weight: bold;
+    background-color: #f4f4f4;
+}
+
+.tabla-movimientos tbody tr:hover {
+    background-color: #f9f9f9;
+}
+
+.tabla-movimientos td {
+    overflow-wrap: anywhere;
+}
